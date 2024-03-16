@@ -23,14 +23,14 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    displayPhoto: {
+      type: String, //cloudinary url
+    },
     password: {
       type: String,
-      required: true,
+      required: [true, "Password is required"],
     },
     refreshToken: {
-      type: String,
-    },
-    displayPhoto: {
       type: String,
     },
   },

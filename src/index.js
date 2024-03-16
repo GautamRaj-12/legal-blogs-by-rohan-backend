@@ -5,10 +5,14 @@ import app from "./app.js";
 
 connectDB()
   .then(() => {
+    app.on("error", (error) => {
+      console.log("ERR: ", error);
+      throw error;
+    });
     app.listen(process.env.PORT || 8000, () => {
       console.log(`Server is running at ${process.env.PORT}`);
     });
   })
-  .catch((error) => {
-    console.log("Mongodb Connection failed", error);
+  .catch((err) => {
+    console.log("Mongo DB connection FAILED!!!!", err);
   });
