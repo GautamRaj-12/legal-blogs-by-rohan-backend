@@ -1,9 +1,7 @@
-// Import necessary modules and functions
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/apiError.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 import { User } from "../models/user.model.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import jwt from "jsonwebtoken";
 
 // Define a function to generate access and refresh tokens for a given user ID
@@ -33,10 +31,8 @@ const generateAccessAndRefreshTokens = async (userId) => {
 
 // Define a function to handle user registration
 const registerUser = asyncHandler(async (req, res) => {
-  // get user details from frontend/postman
   const { username, email, fullName, password } = req.body;
 
-  // validation - not empty or undefined
   if (
     [fullName, email, username, password].some(
       (field) => field === undefined || field?.trim() === ""
@@ -45,17 +41,14 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "All fields are required");
   }
 
-  // check if user already exists? username, email
   const existedUser = await User.findOne({
     $or: [{ username }, { email }],
   });
 
-  // Throw an error if the user already exists
   if (existedUser) {
     throw new ApiError(409, "User with email or username already exists");
   }
 
-  // create user object - create entry in db
   const user = await User.create({
     fullName,
     email,
@@ -63,17 +56,14 @@ const registerUser = asyncHandler(async (req, res) => {
     username: username.toLowerCase(),
   });
 
-  // check for user creation and remove password and refresh token
   const createdUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
 
-  // Throw an error if user creation fails
   if (!createdUser) {
     throw new ApiError(500, "Something went wrong while registering");
   }
 
-  // return user response
   return res
     .status(201)
     .json(new ApiResponse(200, createdUser, "User registered successfully"));
@@ -81,44 +71,36 @@ const registerUser = asyncHandler(async (req, res) => {
 
 // Define a function to handle user login
 const loginUser = asyncHandler(async (req, res) => {
-  // req body -> data
   const { email, username, password } = req.body;
-  // username or email
+
   if (!username && !email) {
     throw new ApiError(400, "username or email is required");
   }
 
-  // find the user
   const user = await User.findOne({ $or: [{ username }, { email }] });
   if (!user) {
     throw new ApiError(404, "User does not exist");
   }
 
-  // check password
   const isPasswordValid = await user.isPasswordCorrect(password);
 
-  // Throw an error if the password is invalid
   if (!isPasswordValid) {
     throw new ApiError(401, "Invalid user credentials");
   }
 
-  // access and refresh token
   const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
     user._id
   );
 
-  // Retrieve the logged-in user details (excluding password and refresh token)
   const loggedInUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
 
-  // send Cookie
   const options = {
     httpOnly: true,
     secure: true,
   };
 
-  // Set cookies in the response containing the access and refresh tokens
   return res
     .status(200)
     .cookie("accessToken", accessToken, options)
@@ -134,20 +116,17 @@ const loginUser = asyncHandler(async (req, res) => {
 
 // Define a function to handle user logout
 const logoutUser = asyncHandler(async (req, res) => {
-  // Update the user's refreshToken to undefined in the database
   User.findByIdAndUpdate(
     req.user._id,
     { $set: { refreshToken: undefined } },
     { new: true }
   );
 
-  // Configure options for clearing cookies
   const options = {
     httpOnly: true,
     secure: true,
   };
 
-  // Clear cookies in the response for accessToken and refreshToken
   return res
     .status(200)
     .clearCookie("accessToken", options)
@@ -157,46 +136,37 @@ const logoutUser = asyncHandler(async (req, res) => {
 
 // Define a function to handle refreshing access tokens
 const refreshAccessToken = asyncHandler(async (req, res) => {
-  // Retrieve the incoming refreshToken from cookies or request body
   const incomingRefreshToken =
     req.cookies.refreshToken || req.body.refreshToken;
 
-  // Throw an error if no refreshToken is provided
   if (!incomingRefreshToken) {
     throw new ApiError(401, "Unauthorized request");
   }
 
   try {
-    // Verify the incoming refreshToken using the secret key
     const decodedToken = jwt.verify(
       incomingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET
     );
 
-    // Find the user based on the decodedToken
     const user = await User.findById(decodedToken?._id);
 
-    // Throw an error if the user does not exist
     if (!user) {
       throw new ApiError(401, "Invalid Refresh Token");
     }
 
-    // Throw an error if the incoming refreshToken does not match the user's refreshToken
     if (incomingRefreshToken !== user?.refreshToken) {
       throw new ApiError(401, "Refresh token is expired or used");
     }
 
-    // Configure options for cookies
     const options = {
       httpOnly: true,
       secure: true,
     };
 
-    // Generate new access and refresh tokens
     const { accessToken, newRefreshToken } =
       await generateAccessAndRefreshTokens(user._id);
 
-    // Set cookies in the response containing the new access and refresh tokens
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
@@ -209,10 +179,65 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         )
       );
   } catch (error) {
-    // Throw an error if token verification fails
     throw new ApiError(401, error?.message || "Invalid Refresh Token");
   }
 });
 
-// Export the functions for use in routes
-export { registerUser, loginUser, logoutUser, refreshAccessToken };
+// Define a function to change current password
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user?._id);
+  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+
+  if (!isPasswordCorrect) {
+    throw new ApiError(400, "Invalid old password");
+  }
+
+  user.password = newPassword;
+  await user.save({ validateBeforeSave: false });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password changed successfully"));
+});
+
+// Define a function to get current user
+const getCurrentUser = asyncHandler(async (req, res) => {
+  return res
+    .status(200)
+    .json(new ApiResponse(200, req.user, "User fetched successfully"));
+});
+
+// Define a function to update account details
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  const { fullName, email } = req.body;
+
+  if (!fullName || !email) {
+    throw new ApiError(400, "All fields are required");
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+      $set: {
+        fullName,
+        email: email,
+      },
+    },
+    { new: true }
+  ).select("-password");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfully"));
+});
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  getCurrentUser,
+  updateAccountDetails,
+};
