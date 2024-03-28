@@ -4,7 +4,22 @@ import { ApiResponse } from "../utils/apiResponse.js";
 import { Post } from "../models/post.model.js";
 
 const createPost = asyncHandler(async (req, res) => {
-  res.json(new ApiResponse(200, {}, "create post route"));
+  const { title, desc } = req.body;
+
+  if (!(title && desc)) {
+    throw new ApiError(400, "user should provide title and discription");
+  }
+  const newPost = await Post.create({
+    title,
+    desc,
+    username: req.user?._username,
+  });
+  if (!newPost) {
+    throw new ApiError(400, "Post could not be created");
+  }
+  return res
+    .status(201)
+    .json(new ApiResponse(201, newPost, "Post created successfully"));
 });
 
 const allPosts = asyncHandler(async (req, res) => {
