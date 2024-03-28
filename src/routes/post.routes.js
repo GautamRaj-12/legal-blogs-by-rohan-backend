@@ -13,6 +13,6 @@ import {
 router.route("/create").post(verifyJWT, createPost);
 router.route("/all-posts").get(allPosts);
 router.route("/post/:id").get(singlePost);
-router.route("/update/:id").put(updatePost);
-router.route("/delete/:id").delete(deletePost);
+router.route("/update/:id").put(verifyJWT, updatePost);
+router.route("/delete/:id").delete(verifyJWT, deletePost);
 export default router;
